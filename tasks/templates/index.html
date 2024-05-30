@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <h2>Tarefas</h2>
+  {% load static %}
+
+  <style>
+    .task-columns {
+      display: flex;
+      justify-content: space-between;
+    }
+    .task-column {
+      flex: 1;
+      margin: 0 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      padding: 10px;
+      background: #f9f9f9;
+    }
+    .task-card {
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      margin: 5px 0;
+      padding: 10px;
+      background: #fff;
+    }
+    /* Modal Style */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgb(0,0,0);
+      background-color: rgba(0,0,0,0.4);
+      padding-top: 60px;
+    }
+    .modal-content {
+      background-color: #fefefe;
+      margin: 5% auto;
+      padding: 20px;
+      border: 1px solid #888;
+      width: 80%;
+      max-width: 500px;
+      border-radius: 10px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    }
+    .close {
+      color: #aaa;
+      float: right;
+      font-size: 28px;
+      font-weight: bold;
+    }
+    .close:hover,
+    .close:focus {
+      color: black;
+      text-decoration: none;
+      cursor: pointer;
+    }
+  </style>
+
+  <div>
+    <form method="post" action="{% url 'add_column' %}">
+      {% csrf_token %}
+      {{ column_form.as_p }}
+      <button type="submit">Adicionar Nova Coluna</button>
+    </form>
+  </div>
+
+  <div class="task-columns" id="column-container">
+    {% for column in columns %}
+    <div class="task-column" id="column-{{ column.id }}">
+      <h3>{{ column.name }}</h3>
+      <button class="btn-edit-column" data-column-id="{{ column.id }}">Editar Coluna</button>
+      <ul class="task-list" id="list-{{ column.id }}">
+        {% for task in column.tasks.all %}
+          <li class="task-card" data-id="{{ task.id }}">
+            <h3>{{ task.title }}</h3>
+            <p>{{ task.description }}</p>
+            <button class="btn-edit-task" data-task-id="{{ task.id }}" data-task-title="{{ task.title }}" data-task-description="{{ task.description }}" data-task-status="{{ task.status }}" data-task-column="{{ column.id }}">Editar</button>
+          </li>
+        {% endfor %}
+      </ul>
+      <button class="btn-add-task" data-column-id="{{ column.id }}">Adicionar Tarefa</button>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Modal for Creating and Editing Task -->
+  <div id="taskModal" class="modal">
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <form id="taskForm" method="post" action="{% url 'add_task' %}">
+        {% csrf_token %}
+        {{ task_form.as_p }}
+        <input type="hidden" name="column" id="taskColumn">
+        <input type="hidden" name="task_id" id="taskId">
+        <button type="submit">Salvar</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal for Editing Column -->
+  <div id="columnModal" class="modal">
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <form id="columnForm" method="post" action="{% url 'edit_column' %}">
+        {% csrf_token %}
+        <input type="hidden" name="column_id" id="columnId">
+        <label for="columnName">Nome da Coluna:</label>
+        <input type="text" name="name" id="columnName">
+        <button type="submit">Salvar</button>
+      </form>
+    </div>
+  </div>
+
+  <footer>
+    <p>&copy; 2024 JF Rocket</p>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', (event) => {
+      var statusLists = document.querySelectorAll('.task-list');
+      var modal = document.getElementById("taskModal");
+      var columnModal = document.getElementById("columnModal");
+      var span = document.getElementsByClassName("close");
+      var taskForm = document.getElementById("taskForm");
+      var columnForm = document.getElementById("columnForm");
+  
+      statusLists.forEach((list) => {
+        new Sortable(list, {
+          group: 'tasks',
+          animation: 150,
+          onEnd: function (evt) {
+            var itemEl = evt.item;
+            var newColumnId = itemEl.closest('.task-column').id.split('-')[1];
+            var taskId = itemEl.getAttribute('data-id');
+  
+            fetch(`/update-task-status/${taskId}/`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+              },
+              body: JSON.stringify({ column: newColumnId })
+            }).then(response => {
+              if (!response.ok) {
+                console.error('Error updating task status:', response);
+              }
+            });
+          }
+        });
+      });
+  
+      new Sortable(document.getElementById('column-container'), {
+        animation: 150,
+        onEnd: function (evt) {
+          // Optional: handle column order update logic here
+        }
+      });
+  
+      document.querySelectorAll('.btn-add-task').forEach(button => {
+        button.onclick = function() {
+          document.getElementById("taskColumn").value = this.dataset.columnId;
+          taskForm.action = "{% url 'add_task' %}";
+          modal.style.display = "block";
+        }
+      });
+  
+      document.querySelectorAll('.btn-edit-task').forEach(button => {
+        button.onclick = function() {
+          document.getElementById("taskId").value = this.dataset.taskId;
+          document.getElementById("taskColumn").value = this.dataset.taskColumn;
+          document.querySelector('[name="title"]').value = this.dataset.taskTitle;
+          document.querySelector('[name="description"]').value = this.dataset.taskDescription;
+          document.querySelector('[name="status"]').value = this.dataset.taskStatus;
+          taskForm.action = "{% url 'edit_task' 0 %}".replace('0', this.dataset.taskId);
+          modal.style.display = "block";
+        }
+      });
+  
+      document.querySelectorAll('.btn-edit-column').forEach(button => {
+        button.onclick = function() {
+          document.getElementById("columnId").value = this.dataset.columnId;
+          document.getElementById("columnName").value = this.closest('.task-column').querySelector('h3').innerText;
+          columnModal.style.display = "block";
+        }
+      });
+  
+      Array.from(span).forEach(function(element) {
+        element.onclick = function() {
+          modal.style.display = "none";
+          columnModal.style.display = "none";
+        }
+      });
+  
+      window.onclick = function(event) {
+        if (event.target == modal) {
+          modal.style.display = "none";
+        }
+        if (event.target == columnModal) {
+          columnModal.style.display = "none";
+        }
+      }
+    });
+  </script>
+ 
+{% endblock %}
